@@ -35,6 +35,7 @@ We benchmark the following four open-source implementations on an Nvidia RTX 600
 ### Accuracy
 
 We randomly generate $N=10000$ matrices of size $4\times 4$, forming an $N\times 4\times 4$ tensor $R$ as the input of the four implementations. Each of them outputs a tensor $T$ consisting of $N$ matrices of size $4\times 4$. If the projection is accurate, then each $T_i$ is doubly stochastic, so we measure the error as
+
 $$
 \mathrm{Err}(T_i)=\Vert T_i\mathbf{1}_4-\mathbf{1}_4 \Vert_1 + \Vert T_i^\top\mathbf{1}_4-\mathbf{1}_4 \Vert_1.
 $$
