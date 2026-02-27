@@ -28,9 +28,11 @@ We benchmark the following four open-source implementations on an Nvidia RTX 600
 
 2. **Triton-Sinkhorn**: A CUDA-fused implementation of the Sinkhorn–Knopp algorithm backed by OpenAI Trition: https://github.com/LottoLottoLotto/triton-sinkhorn.
 
-3. **mHC.cu**: A CUDA implementation of mHC: https://github.com/AndreSlavescu/mHC.cu.
+3. **mHC.cu**: A CUDA implementation of mHC, with specialized $n=4$ optimizations: https://github.com/AndreSlavescu/mHC.cu.
 
 4. **mHC-proj**: This library.
+
+The test code can be found in the [benchmark](benchmark) directory.
 
 ### Accuracy
 
@@ -80,4 +82,3 @@ Forward and backward passes:
 | 8K         | 135.1   | 52.87           | 4.085  | 1.000    |
 | 32K        | 95.59   | 180.5           | 6.903  | 1.000    |
 | 128K       | 52.59   | 370.5           | 21.89  | 1.000    |
-
