@@ -20,6 +20,119 @@ After installing CUDA-based PyTorch and setting up the CUDA development environm
 pip3 install --no-build-isolation .
 ```
 
+## PyTorch Interface
+
+The projection operator can be accessed via the `mhc_proj.MHCProjectionN4` module:
+
+```py
+import torch
+from mhc_proj import MHCProjectionN4
+
+torch.manual_seed(123)
+N = 2
+x = torch.randn(N, 4, 4, device="cuda")
+x.requires_grad_(True)
+G = torch.randn(N, 4, 4, device="cuda")
+
+# Vanilla PyTorch implementation of Sinkhorn-Knopp algorithm
+eps = 1e-6
+P = torch.exp(x)
+for _ in range(20):
+    P = P / (P.sum(dim=2, keepdim=True) + eps)
+    P = P / (P.sum(dim=1, keepdim=True) + eps)
+
+loss = torch.sum(G * P)
+loss.backward()
+print(P)
+# tensor([[[0.4750, 0.1686, 0.0225, 0.3339],
+#          [0.0721, 0.2143, 0.4805, 0.2332],
+#          [0.4112, 0.1480, 0.0948, 0.3460],
+#          [0.0418, 0.4692, 0.4022, 0.0869]],
+
+#         [[0.2199, 0.0543, 0.5639, 0.1619],
+#          [0.0451, 0.3823, 0.2175, 0.3551],
+#          [0.2440, 0.2218, 0.0760, 0.4583],
+#          [0.4910, 0.3416, 0.1426, 0.0247]]], device='cuda:0',
+#        grad_fn=<DivBackward0>)
+print(x.grad)
+# tensor([[[-0.1169,  0.1423, -0.0006, -0.0248],
+#          [ 0.0488,  0.1300, -0.4080,  0.2292],
+#          [ 0.0912,  0.0318,  0.1050, -0.2281],
+#          [-0.0231, -0.3041,  0.3035,  0.0237]],
+
+#         [[ 0.3092, -0.0090,  0.0445, -0.3446],
+#          [ 0.0898, -0.5874,  0.1496,  0.3481],
+#          [-0.1448,  0.1162, -0.0220,  0.0507],
+#          [-0.2541,  0.4802, -0.1720, -0.0541]]], device='cuda:0')
+
+x.grad = None
+proj = MHCProjectionN4(tol=1e-6)
+P2 = proj(x)
+loss2 = torch.sum(G * P2)
+loss2.backward()
+print(P2)
+# tensor([[[0.4750, 0.1686, 0.0225, 0.3339],
+#          [0.0721, 0.2143, 0.4805, 0.2332],
+#          [0.4112, 0.1480, 0.0948, 0.3460],
+#          [0.0418, 0.4692, 0.4022, 0.0869]],
+
+#         [[0.2199, 0.0543, 0.5639, 0.1619],
+#          [0.0451, 0.3823, 0.2175, 0.3551],
+#          [0.2440, 0.2218, 0.0760, 0.4583],
+#          [0.4910, 0.3416, 0.1426, 0.0247]]], device='cuda:0',
+#        grad_fn=<MHCProjectionN4FunctionBackward>)
+print(x.grad)
+# tensor([[[-0.1169,  0.1423, -0.0006, -0.0248],
+#          [ 0.0488,  0.1300, -0.4080,  0.2292],
+#          [ 0.0912,  0.0318,  0.1050, -0.2281],
+#          [-0.0231, -0.3041,  0.3035,  0.0237]],
+
+#         [[ 0.3092, -0.0090,  0.0445, -0.3446],
+#          [ 0.0898, -0.5874,  0.1496,  0.3481],
+#          [-0.1448,  0.1162, -0.0220,  0.0507],
+#          [-0.2541,  0.4802, -0.1720, -0.0541]]], device='cuda:0')
+```
+
+One can also use the lower-level functions
+
+- `mhc_proj.torch.birkhoff_proj_n4(R, tol=1e-6)`
+- `mhc_proj.torch.birkhoff_proj_n4_backward(G, T)`
+
+to accomplish the forward and backward passes:
+
+```py
+import torch
+import mhc_proj
+
+torch.manual_seed(123)
+N = 2
+x = torch.randn(N, 4, 4, device="cuda")
+G = torch.randn(N, 4, 4, device="cuda")
+
+P3 = mhc_proj.torch.birkhoff_proj_n4(x, tol=1e-6)["T"]
+print(P3)
+# tensor([[[0.4750, 0.1686, 0.0225, 0.3339],
+#          [0.0721, 0.2143, 0.4805, 0.2332],
+#          [0.4112, 0.1480, 0.0948, 0.3460],
+#          [0.0418, 0.4692, 0.4022, 0.0869]],
+
+#         [[0.2199, 0.0543, 0.5639, 0.1619],
+#          [0.0451, 0.3823, 0.2175, 0.3551],
+#          [0.2440, 0.2218, 0.0760, 0.4583],
+#          [0.4910, 0.3416, 0.1426, 0.0247]]], device='cuda:0')
+D3 = mhc_proj.torch.birkhoff_proj_n4_backward(G, P3)["D"]
+print(D3)
+# tensor([[[-0.1169,  0.1423, -0.0006, -0.0248],
+#          [ 0.0488,  0.1300, -0.4080,  0.2292],
+#          [ 0.0912,  0.0318,  0.1050, -0.2281],
+#          [-0.0231, -0.3041,  0.3035,  0.0237]],
+
+#         [[ 0.3092, -0.0090,  0.0445, -0.3446],
+#          [ 0.0898, -0.5874,  0.1496,  0.3481],
+#          [-0.1448,  0.1162, -0.0220,  0.0507],
+#          [-0.2541,  0.4802, -0.1720, -0.0541]]], device='cuda:0')
+```
+
 ## Benchmark
 
 We benchmark the following four open-source implementations on an Nvidia RTX 6000 Ada GPU:
