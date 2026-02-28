@@ -45,7 +45,7 @@ PYBIND11_MODULE(_internal, m)
 #if defined(TORCH_BUILD)
     py::module m_torch = m.def_submodule("torch", "PyTorch interface");
     m_torch.def("birkhoff_proj_n4", &birkhoff_proj_n4,
-        py::arg("R"), py::arg("tol") = 1e-4,
+        py::arg("R"), py::arg("tol") = 1e-6,
         "KL projection of 4x4 matrix to Birkhoff polytope");
     m_torch.def("birkhoff_proj_n4_backward", &birkhoff_proj_n4_backward,
         py::arg("G"), py::arg("T"),
