@@ -7,5 +7,6 @@ except:
     pass
 
 from ._internal import *
+from .module import MHCProjectionN4, MHCSinkhornN4
 
 __version__ = "0.1.0"
