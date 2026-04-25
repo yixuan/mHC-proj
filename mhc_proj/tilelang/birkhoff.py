@@ -190,12 +190,12 @@ def _solve_delta_linear_system(val_T, val_rhs, col, base_lane_id, mask):
     h12 = T.shfl_sync(hij, base_lane_id + 1, mask=mask)
     h02 = T.shfl_sync(hij, base_lane_id + 2, mask=mask)
 
-    det = (
+    raw_det = (
         h00 * (h11 * h22 - h12 * h12)
         - h01 * (h01 * h22 - h12 * h02)
         + h02 * (h01 * h12 - h11 * h02)
     )
-    det = T.max(det, _EPS)
+    det = T.max(raw_det, _EPS)
 
     rhs0 = T.shfl_sync(val_rhs, base_lane_id, mask=mask)
     rhs1 = T.shfl_sync(val_rhs, base_lane_id + 1, mask=mask)
