@@ -86,6 +86,58 @@ def _sinkhorn_iteration(val_beta, val_R, base_lane_id, mask):
     return val_beta - betam
 
 
+def _compute_newton_direction(val_c, val_T, gnorm, row, col, lane_id, base_lane_id, mask):
+    diag = T.min(gnorm * gnorm, 1e-3)
+    hii = diag + val_c - _warp_reduce_sum_col(val_T * val_T, mask)
+    h00 = T.shfl_sync(hii, base_lane_id, mask=mask)
+    h11 = T.shfl_sync(hii, base_lane_id + 1, mask=mask)
+    h22 = T.shfl_sync(hii, base_lane_id + 2, mask=mask)
+
+    src_col = T.if_then_else(col >= 2, 0, col + 1)
+    val_T_perm = T.shfl_sync(val_T, src_col, 4, mask=mask)
+    hij = -_warp_reduce_sum_col(val_T * val_T_perm, mask)
+    h01 = T.shfl_sync(hij, base_lane_id, mask=mask)
+    h12 = T.shfl_sync(hij, base_lane_id + 1, mask=mask)
+    h02 = T.shfl_sync(hij, base_lane_id + 2, mask=mask)
+
+    val_g = val_c - 1.0
+    g0 = T.shfl_sync(val_g, base_lane_id, mask=mask)
+    g1 = T.shfl_sync(val_g, base_lane_id + 1, mask=mask)
+    g2 = T.shfl_sync(val_g, base_lane_id + 2, mask=mask)
+
+    det = (
+        h00 * (h11 * h22 - h12 * h12)
+        - h01 * (h01 * h22 - h12 * h02)
+        + h02 * (h01 * h12 - h11 * h02)
+    )
+    m = (h00 + h11 + h22) / 3.0
+    rho = m * m * m / det
+
+    val_y = 0.0
+    if col == 0:
+        val_y = (
+            (h11 * h22 - h12 * h12) * g0
+            + (h02 * h12 - h01 * h22) * g1
+            + (h01 * h12 - h11 * h02) * g2
+        )
+    elif col == 1:
+        val_y = (
+            (h02 * h12 - h01 * h22) * g0
+            + (h00 * h22 - h02 * h02) * g1
+            + (h01 * h02 - h00 * h12) * g2
+        )
+    elif col == 2:
+        val_y = (
+            (h01 * h12 - h11 * h02) * g0
+            + (h01 * h02 - h00 * h12) * g1
+            + (h00 * h11 - h01 * h01) * g2
+        )
+
+    val_d = -val_y / det
+    fallback_d = T.if_then_else(col < 3, -val_g, 0.0)
+    return T.if_then_else(T.any_of(det <= _EPS, rho > 1000.0), fallback_d, val_d)
+
+
 @tilelang.jit(
     pass_configs={
         tilelang.PassConfigKey.TL_DISABLE_WARP_SPECIALIZED: True,
@@ -271,6 +323,10 @@ def _birkhoff_proj_n4_forward_kernel(R, T_out, tol: float = 1e-6):
                 val_beta = _sinkhorn_iteration(val_beta, val_R, base_lane_id, active_mask)
                 val_c, val_T, current_f, current_gnorm = _compute_f_gradient(
                     val_beta, val_R, row, col, base_lane_id, active_mask
+                )
+
+                val_d = _compute_newton_direction(
+                    val_c, val_T, current_gnorm, row, col, lane_id, base_lane_id, active_mask
                 )
 
                 T_out[instance_id, row, col] = val_T
