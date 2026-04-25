@@ -1,6 +1,8 @@
-from .projection import (
+from .birkhoff import (
     birkhoff_proj_n4_backward,
     birkhoff_proj_n4_forward,
+)
+from .sinkhorn import (
     sinkhorn_knopp_n4_forward,
     sinkhorn_knopp_n4_backward,
 )
