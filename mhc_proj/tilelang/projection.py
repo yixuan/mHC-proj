@@ -154,9 +154,7 @@ def _line_search_gamma(k):
     )
 
 
-def _solve_delta_linear_system(
-    val_T, val_rhs, row, col, lane_id, base_lane_id, mask
-):
+def _solve_delta_linear_system(val_T, val_rhs, row, col, lane_id, base_lane_id, mask):
     val_c = _warp_reduce_sum_col(val_T, mask)
     hii = val_c - _warp_reduce_sum_col(val_T * val_T, mask)
     h00 = T.shfl_sync(hii, base_lane_id, mask=mask)
@@ -473,7 +471,6 @@ def _birkhoff_proj_n4_backward_kernel(G, T_out, D):
 
                 row = lane_id_gr // 4
                 col = lane_id_gr % 4
-                ind_mat = instance_id * (_N4 * _N4) + lane_id_gr
 
                 val_G = G[instance_id, row, col]
                 val_T = T_out[instance_id, row, col]
@@ -491,8 +488,10 @@ def _birkhoff_proj_n4_backward_kernel(G, T_out, D):
                     base_lane_id,
                     active_mask,
                 )
+                val_v = val_mur - _warp_reduce_sum_row(val_T * val_w, active_mask)
+                val_D = (val_v + val_w - val_G) * val_T
 
-                D[instance_id, row, col] = val_w
+                D[instance_id, row, col] = -val_D
 
 
 def birkhoff_proj_n4_forward(
