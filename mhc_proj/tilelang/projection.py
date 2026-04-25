@@ -114,9 +114,7 @@ def _sinkhorn_knopp_n4_backward_kernel(G, T_out, D, tilesize: int = 32):
         T.copy(res_y, p_y)
 
         for t, i in T.Parallel(tilesize, _N4):
-            dot_buf[t, i] = (
-                res_x[t, i] * res_x[t, i] + res_y[t, i] * res_y[t, i]
-            )
+            dot_buf[t, i] = res_x[t, i] * res_x[t, i] + res_y[t, i] * res_y[t, i]
         T.reduce_sum(dot_buf, r_norm, dim=-1)
 
         for _ in T.serial(_CG_ITERS):
@@ -133,9 +131,7 @@ def _sinkhorn_knopp_n4_backward_kernel(G, T_out, D, tilesize: int = 32):
                 ap_y[t, i] += p_y[t, i]
 
             for t, i in T.Parallel(tilesize, _N4):
-                dot_buf[t, i] = (
-                    p_x[t, i] * ap_x[t, i] + p_y[t, i] * ap_y[t, i]
-                )
+                dot_buf[t, i] = p_x[t, i] * ap_x[t, i] + p_y[t, i] * ap_y[t, i]
             T.reduce_sum(dot_buf, p_ap, dim=-1)
 
             for t, i in T.Parallel(tilesize, _N4):
@@ -146,9 +142,7 @@ def _sinkhorn_knopp_n4_backward_kernel(G, T_out, D, tilesize: int = 32):
                 res_y[t, i] -= alpha * ap_y[t, i]
 
             for t, i in T.Parallel(tilesize, _N4):
-                dot_buf[t, i] = (
-                    res_x[t, i] * res_x[t, i] + res_y[t, i] * res_y[t, i]
-                )
+                dot_buf[t, i] = res_x[t, i] * res_x[t, i] + res_y[t, i] * res_y[t, i]
             T.reduce_sum(dot_buf, r_new_norm, dim=-1)
 
             for t, i in T.Parallel(tilesize, _N4):
