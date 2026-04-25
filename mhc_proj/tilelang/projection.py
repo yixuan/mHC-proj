@@ -21,6 +21,30 @@ def _cuda_float_contiguous(tensor: torch.Tensor) -> torch.Tensor:
     return tensor.to(torch.float32).contiguous()
 
 
+def _warp_reduce_sum_row(val, mask):
+    val += T.shfl_xor(val, 1, mask=mask)
+    val += T.shfl_xor(val, 2, mask=mask)
+    return val
+
+
+def _warp_reduce_max_row(val, mask):
+    val = T.max(val, T.shfl_xor(val, 1, mask=mask))
+    val = T.max(val, T.shfl_xor(val, 2, mask=mask))
+    return val
+
+
+def _warp_reduce_sum_col(val, mask):
+    val += T.shfl_xor(val, 4, mask=mask)
+    val += T.shfl_xor(val, 8, mask=mask)
+    return val
+
+
+def _warp_reduce_max_col(val, mask):
+    val = T.max(val, T.shfl_xor(val, 4, mask=mask))
+    val = T.max(val, T.shfl_xor(val, 8, mask=mask))
+    return val
+
+
 @tilelang.jit(
     pass_configs={
         tilelang.PassConfigKey.TL_DISABLE_WARP_SPECIALIZED: True,
@@ -189,6 +213,10 @@ def _birkhoff_proj_n4_forward_kernel(R, T_out, tol: float = 1e-6):
                 ind_mat = instance_id * (_N4 * _N4) + lane_id_gr
 
                 val_R = R[instance_id, row, col]
+                row_sum_R = _warp_reduce_sum_row(val_R, active_mask)
+                row_max_R = _warp_reduce_max_row(val_R, active_mask)
+                col_sum_R = _warp_reduce_sum_col(val_R, active_mask)
+                col_max_R = _warp_reduce_max_col(val_R, active_mask)
 
 
 def birkhoff_proj_n4_forward(
