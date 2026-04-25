@@ -154,6 +154,56 @@ def _line_search_gamma(k):
     )
 
 
+def _solve_delta_linear_system(
+    val_T, val_rhs, row, col, lane_id, base_lane_id, mask
+):
+    val_c = _warp_reduce_sum_col(val_T, mask)
+    hii = val_c - _warp_reduce_sum_col(val_T * val_T, mask)
+    h00 = T.shfl_sync(hii, base_lane_id, mask=mask)
+    h11 = T.shfl_sync(hii, base_lane_id + 1, mask=mask)
+    h22 = T.shfl_sync(hii, base_lane_id + 2, mask=mask)
+
+    src_col = T.if_then_else(col >= 2, 0, col + 1)
+    val_T_perm = T.shfl_sync(val_T, src_col, 4, mask=mask)
+    hij = -_warp_reduce_sum_col(val_T * val_T_perm, mask)
+    h01 = T.shfl_sync(hij, base_lane_id, mask=mask)
+    h12 = T.shfl_sync(hij, base_lane_id + 1, mask=mask)
+    h02 = T.shfl_sync(hij, base_lane_id + 2, mask=mask)
+
+    det = (
+        h00 * (h11 * h22 - h12 * h12)
+        - h01 * (h01 * h22 - h12 * h02)
+        + h02 * (h01 * h12 - h11 * h02)
+    )
+    det = T.max(det, _EPS)
+
+    rhs0 = T.shfl_sync(val_rhs, base_lane_id, mask=mask)
+    rhs1 = T.shfl_sync(val_rhs, base_lane_id + 1, mask=mask)
+    rhs2 = T.shfl_sync(val_rhs, base_lane_id + 2, mask=mask)
+
+    val_y = 0.0
+    if col == 0:
+        val_y = (
+            (h11 * h22 - h12 * h12) * rhs0
+            + (h02 * h12 - h01 * h22) * rhs1
+            + (h01 * h12 - h11 * h02) * rhs2
+        )
+    elif col == 1:
+        val_y = (
+            (h02 * h12 - h01 * h22) * rhs0
+            + (h00 * h22 - h02 * h02) * rhs1
+            + (h01 * h02 - h00 * h12) * rhs2
+        )
+    elif col == 2:
+        val_y = (
+            (h01 * h12 - h11 * h02) * rhs0
+            + (h01 * h02 - h00 * h12) * rhs1
+            + (h00 * h11 - h01 * h01) * rhs2
+        )
+
+    return val_y / det
+
+
 @tilelang.jit(
     pass_configs={
         tilelang.PassConfigKey.TL_DISABLE_WARP_SPECIALIZED: True,
@@ -416,10 +466,33 @@ def _birkhoff_proj_n4_backward_kernel(G, T_out, D):
             instance_id = global_tid // _THREADS_PER_INSTANCE
 
             if instance_id < N:
+                lane_id = tx & 31
                 lane_id_gr = tx % _THREADS_PER_INSTANCE
+                base_lane_id = lane_id & (~15)
+                active_mask = T.if_then_else(lane_id < 16, 0x0000FFFF, 0xFFFF0000)
+
                 row = lane_id_gr // 4
                 col = lane_id_gr % 4
-                D[instance_id, row, col] = 0.0
+                ind_mat = instance_id * (_N4 * _N4) + lane_id_gr
+
+                val_G = G[instance_id, row, col]
+                val_T = T_out[instance_id, row, col]
+                val_Gamma = val_G * val_T
+                val_muc = _warp_reduce_sum_col(val_Gamma, active_mask)
+                val_mur = _warp_reduce_sum_row(val_Gamma, active_mask)
+                val_Tmur = _warp_reduce_sum_col(val_T * val_mur, active_mask)
+                val_w_rhs = val_muc - val_Tmur
+                val_w = _solve_delta_linear_system(
+                    val_T,
+                    val_w_rhs,
+                    row,
+                    col,
+                    lane_id,
+                    base_lane_id,
+                    active_mask,
+                )
+
+                D[instance_id, row, col] = val_w
 
 
 def birkhoff_proj_n4_forward(
