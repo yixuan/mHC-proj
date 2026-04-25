@@ -399,6 +399,29 @@ def _birkhoff_proj_n4_forward_kernel(R, T_out, tol: float = 1e-6):
                 T_out[instance_id, row, col] = val_T
 
 
+@tilelang.jit
+def _birkhoff_proj_n4_backward_kernel(G, T_out, D):
+    N = T.dynamic("N")
+    dtype = T.float32
+
+    G: T.Tensor((N, _N4, _N4), dtype)  # type: ignore
+    T_out: T.Tensor((N, _N4, _N4), dtype)  # type: ignore
+    D: T.Tensor((N, _N4, _N4), dtype)  # type: ignore
+
+    numBlocks = T.ceildiv(N * _THREADS_PER_INSTANCE, _THREADS_PER_BLOCK)
+
+    with T.Kernel(numBlocks, threads=_THREADS_PER_BLOCK) as (bx,):
+        for tx in T.Parallel(_THREADS_PER_BLOCK):
+            global_tid = bx * _THREADS_PER_BLOCK + tx
+            instance_id = global_tid // _THREADS_PER_INSTANCE
+
+            if instance_id < N:
+                lane_id_gr = tx % _THREADS_PER_INSTANCE
+                row = lane_id_gr // 4
+                col = lane_id_gr % 4
+                D[instance_id, row, col] = 0.0
+
+
 def birkhoff_proj_n4_forward(
     R: torch.Tensor, tol: float = 1e-6
 ) -> dict[str, torch.Tensor]:
@@ -412,7 +435,20 @@ def birkhoff_proj_n4_forward(
 
 def birkhoff_proj_n4_backward(
     G: torch.Tensor, T: torch.Tensor
-) -> dict[str, torch.Tensor]: ...
+) -> dict[str, torch.Tensor]:
+    _check_n4_tensor("G", G)
+    _check_n4_tensor("T", T)
+    if G.shape != T.shape:
+        raise ValueError("G and T must have the same shape")
+
+    src_options = {"device": G.device, "dtype": G.dtype}
+    G_work = _cuda_float_contiguous(G)
+    T_work = _cuda_float_contiguous(T)
+    D = torch.empty_like(G_work)
+
+    _birkhoff_proj_n4_backward_kernel(G_work, T_work, D)
+
+    return {"D": D.to(**src_options)}
 
 
 def sinkhorn_knopp_n4_forward(
