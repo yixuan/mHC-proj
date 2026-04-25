@@ -2,3 +2,9 @@ build/*
 *.o
 *.so
 *.pyc
+
+.codex
+*.egg-info
+.vscode/
+uv.lock
+references/
