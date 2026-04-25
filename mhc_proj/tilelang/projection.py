@@ -63,6 +63,15 @@ def _compute_f_gradient(val_beta, val_R, row, col, base_lane_id, mask):
     return val_c, val_T, f, gnorm
 
 
+def _initialize_beta_alpha0(val_R, base_lane_id, mask):
+    col_max = _warp_reduce_max_col(val_R, mask)
+    col_sum_exp = _warp_reduce_sum_col(T.exp(val_R - col_max), mask)
+    val_beta = -col_max - T.log(col_sum_exp)
+    f_alpha0 = -_warp_reduce_sum_row(val_beta, mask)
+    betam = T.shfl_sync(val_beta, base_lane_id + 3, mask=mask)
+    return val_beta - betam, f_alpha0
+
+
 @tilelang.jit(
     pass_configs={
         tilelang.PassConfigKey.TL_DISABLE_WARP_SPECIALIZED: True,
@@ -235,6 +244,15 @@ def _birkhoff_proj_n4_forward_kernel(R, T_out, tol: float = 1e-6):
                 val_c, val_T, current_f, current_gnorm = _compute_f_gradient(
                     val_beta, val_R, row, col, base_lane_id, active_mask
                 )
+
+                val_beta_alpha0, f_alpha0 = _initialize_beta_alpha0(
+                    val_R, base_lane_id, active_mask
+                )
+                if f_alpha0 < current_f:
+                    val_beta = val_beta_alpha0
+                    val_c, val_T, current_f, current_gnorm = _compute_f_gradient(
+                        val_beta, val_R, row, col, base_lane_id, active_mask
+                    )
 
                 T_out[instance_id, row, col] = val_T
 
