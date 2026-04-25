@@ -192,3 +192,15 @@ def sinkhorn_knopp_n4_backward(
     _sinkhorn_knopp_n4_backward_kernel(G_work, T_out, D)
 
     return {"D": D.to(**src_options)}
+
+
+if __name__ == "__main__":
+    R = torch.randn(128, 4, 4, device="cuda")
+    # record time
+    import time
+
+    start_time = time.time()
+    result = sinkhorn_knopp_n4_forward(R)
+    end_time = time.time()
+    print(f"Time taken: {end_time - start_time}")
+    print(result["T"].shape)
