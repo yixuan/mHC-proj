@@ -6,6 +6,8 @@ import torch
 _N4 = 4
 _EPS = 1e-8
 _CG_ITERS = 2 * _N4
+_THREADS_PER_BLOCK = 256
+_THREADS_PER_INSTANCE = 16
 
 
 def _check_n4_tensor(name: str, tensor: torch.Tensor) -> None:
@@ -161,9 +163,43 @@ def _sinkhorn_knopp_n4_backward_kernel(G, T_out, D, tilesize: int = 32):
                 D[batch_idx, i, j] = d[t, i, j]
 
 
+@tilelang.jit
+def _birkhoff_proj_n4_forward_kernel(R, T_out, tol: float = 1e-6):
+    N = T.dynamic("N")
+    dtype = T.float32
+
+    R: T.Tensor((N, _N4, _N4), dtype)  # type: ignore
+    T_out: T.Tensor((N, _N4, _N4), dtype)  # type: ignore
+
+    numBlocks = T.ceildiv(N * _THREADS_PER_INSTANCE, _THREADS_PER_BLOCK)
+
+    with T.Kernel(numBlocks, threads=_THREADS_PER_BLOCK) as (bx,):
+        for tx in T.Parallel(_THREADS_PER_BLOCK):
+            global_tid = bx * _THREADS_PER_BLOCK + tx
+            instance_id = global_tid // _THREADS_PER_INSTANCE
+
+            if instance_id < N:
+                lane_id = tx & 31
+                lane_id_gr = tx % _THREADS_PER_INSTANCE
+                base_lane_id = lane_id & (~15)
+                active_mask = T.if_then_else(lane_id < 16, 0x0000FFFF, 0xFFFF0000)
+
+                row = lane_id_gr // 4
+                col = lane_id_gr % 4
+                ind_mat = instance_id * (_N4 * _N4) + lane_id_gr
+
+                val_R = R[instance_id, row, col]
+
+
 def birkhoff_proj_n4_forward(
     R: torch.Tensor, tol: float = 1e-6
-) -> dict[str, torch.Tensor]: ...
+) -> dict[str, torch.Tensor]:
+    _check_n4_tensor("R", R)
+    src_options = {"device": R.device, "dtype": R.dtype}
+    R_work = _cuda_float_contiguous(R)
+    T_out = torch.empty_like(R_work)
+    _birkhoff_proj_n4_forward_kernel(R_work, T_out, tol)
+    return {"T": T_out.to(**src_options)}
 
 
 def birkhoff_proj_n4_backward(
@@ -202,3 +238,9 @@ def sinkhorn_knopp_n4_backward(
     _sinkhorn_knopp_n4_backward_kernel(G_work, T_out, D)
 
     return {"D": D.to(**src_options)}
+
+
+if __name__ == "__main__":
+    # Example usage
+    R = torch.randn(10, 4, 4).cuda()
+    result = birkhoff_proj_n4_forward(R)
