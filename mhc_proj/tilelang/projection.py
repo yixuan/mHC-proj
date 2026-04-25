@@ -72,6 +72,20 @@ def _initialize_beta_alpha0(val_R, base_lane_id, mask):
     return val_beta - betam, f_alpha0
 
 
+def _sinkhorn_iteration(val_beta, val_R, base_lane_id, mask):
+    val_u = val_beta + val_R
+    row_max = _warp_reduce_max_row(val_u, mask)
+    row_sum_exp = _warp_reduce_sum_row(T.exp(val_u - row_max), mask)
+    val_alpha = -row_max - T.log(row_sum_exp)
+
+    val_v = val_alpha + val_R
+    col_max = _warp_reduce_max_col(val_v, mask)
+    col_sum_exp = _warp_reduce_sum_col(T.exp(val_v - col_max), mask)
+    val_beta = -col_max - T.log(col_sum_exp)
+    betam = T.shfl_sync(val_beta, base_lane_id + 3, mask=mask)
+    return val_beta - betam
+
+
 @tilelang.jit(
     pass_configs={
         tilelang.PassConfigKey.TL_DISABLE_WARP_SPECIALIZED: True,
@@ -253,6 +267,11 @@ def _birkhoff_proj_n4_forward_kernel(R, T_out, tol: float = 1e-6):
                     val_c, val_T, current_f, current_gnorm = _compute_f_gradient(
                         val_beta, val_R, row, col, base_lane_id, active_mask
                     )
+
+                val_beta = _sinkhorn_iteration(val_beta, val_R, base_lane_id, active_mask)
+                val_c, val_T, current_f, current_gnorm = _compute_f_gradient(
+                    val_beta, val_R, row, col, base_lane_id, active_mask
+                )
 
                 T_out[instance_id, row, col] = val_T
 
