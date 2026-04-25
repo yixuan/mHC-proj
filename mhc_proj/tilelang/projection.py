@@ -45,6 +45,24 @@ def _warp_reduce_max_col(val, mask):
     return val
 
 
+def _compute_f_gradient(val_beta, val_R, row, col, base_lane_id, mask):
+    val_u = val_beta + val_R
+    row_max = _warp_reduce_max_row(val_u, mask)
+    val_exp = T.exp(val_u - row_max)
+    row_sum_exp = _warp_reduce_sum_row(val_exp, mask)
+    val_alpha = -row_max - T.log(row_sum_exp)
+    val_T = val_exp / row_sum_exp
+
+    val_c = _warp_reduce_sum_col(val_T, mask)
+    f = -_warp_reduce_sum_col(val_alpha, mask) - _warp_reduce_sum_row(val_beta, mask)
+
+    val_g = T.if_then_else(col < 3, val_c - 1.0, 0.0)
+    abs_val_g = T.if_then_else(val_g < 0.0, -val_g, val_g)
+    gnorm = _warp_reduce_sum_row(abs_val_g, mask)
+
+    return val_c, val_T, f, gnorm
+
+
 @tilelang.jit(
     pass_configs={
         tilelang.PassConfigKey.TL_DISABLE_WARP_SPECIALIZED: True,
@@ -213,10 +231,12 @@ def _birkhoff_proj_n4_forward_kernel(R, T_out, tol: float = 1e-6):
                 ind_mat = instance_id * (_N4 * _N4) + lane_id_gr
 
                 val_R = R[instance_id, row, col]
-                row_sum_R = _warp_reduce_sum_row(val_R, active_mask)
-                row_max_R = _warp_reduce_max_row(val_R, active_mask)
-                col_sum_R = _warp_reduce_sum_col(val_R, active_mask)
-                col_max_R = _warp_reduce_max_col(val_R, active_mask)
+                val_beta = 0.0
+                val_c, val_T, current_f, current_gnorm = _compute_f_gradient(
+                    val_beta, val_R, row, col, base_lane_id, active_mask
+                )
+
+                T_out[instance_id, row, col] = val_T
 
 
 def birkhoff_proj_n4_forward(
