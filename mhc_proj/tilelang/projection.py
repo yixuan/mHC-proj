@@ -8,6 +8,8 @@ _EPS = 1e-8
 _CG_ITERS = 2 * _N4
 _THREADS_PER_BLOCK = 256
 _THREADS_PER_INSTANCE = 16
+_NEWTON_MAX_ITERS = 20
+_LINE_SEARCH_MAX_ITERS = 5
 
 
 def _check_n4_tensor(name: str, tensor: torch.Tensor) -> None:
@@ -86,7 +88,9 @@ def _sinkhorn_iteration(val_beta, val_R, base_lane_id, mask):
     return val_beta - betam
 
 
-def _compute_newton_direction(val_c, val_T, gnorm, row, col, lane_id, base_lane_id, mask):
+def _compute_newton_direction(
+    val_c, val_T, gnorm, row, col, lane_id, base_lane_id, mask
+):
     diag = T.min(gnorm * gnorm, 1e-3)
     hii = diag + val_c - _warp_reduce_sum_col(val_T * val_T, mask)
     h00 = T.shfl_sync(hii, base_lane_id, mask=mask)
@@ -136,6 +140,18 @@ def _compute_newton_direction(val_c, val_T, gnorm, row, col, lane_id, base_lane_
     val_d = -val_y / det
     fallback_d = T.if_then_else(col < 3, -val_g, 0.0)
     return T.if_then_else(T.any_of(det <= _EPS, rho > 1000.0), fallback_d, val_d)
+
+
+def _line_search_gamma(k):
+    return T.if_then_else(
+        k == 0,
+        1.0,
+        T.if_then_else(
+            k == 1,
+            0.5,
+            T.if_then_else(k == 2, 0.1, T.if_then_else(k == 3, 0.05, 0.01)),
+        ),
+    )
 
 
 @tilelang.jit(
@@ -303,7 +319,6 @@ def _birkhoff_proj_n4_forward_kernel(R, T_out, tol: float = 1e-6):
 
                 row = lane_id_gr // 4
                 col = lane_id_gr % 4
-                ind_mat = instance_id * (_N4 * _N4) + lane_id_gr
 
                 val_R = R[instance_id, row, col]
                 val_beta = 0.0
@@ -320,14 +335,66 @@ def _birkhoff_proj_n4_forward_kernel(R, T_out, tol: float = 1e-6):
                         val_beta, val_R, row, col, base_lane_id, active_mask
                     )
 
-                val_beta = _sinkhorn_iteration(val_beta, val_R, base_lane_id, active_mask)
-                val_c, val_T, current_f, current_gnorm = _compute_f_gradient(
-                    val_beta, val_R, row, col, base_lane_id, active_mask
-                )
+                if current_gnorm >= tol:
+                    for _ in T.serial(_NEWTON_MAX_ITERS):
+                        val_d = _compute_newton_direction(
+                            val_c,
+                            val_T,
+                            current_gnorm,
+                            row,
+                            col,
+                            lane_id,
+                            base_lane_id,
+                            active_mask,
+                        )
 
-                val_d = _compute_newton_direction(
-                    val_c, val_T, current_gnorm, row, col, lane_id, base_lane_id, active_mask
-                )
+                        for k in T.serial(_LINE_SEARCH_MAX_ITERS):
+                            gamma = _line_search_gamma(k)
+                            candidate_beta = val_beta + gamma * val_d
+                            (
+                                candidate_c,
+                                candidate_T,
+                                candidate_f,
+                                candidate_gnorm,
+                            ) = _compute_f_gradient(
+                                candidate_beta,
+                                val_R,
+                                row,
+                                col,
+                                base_lane_id,
+                                active_mask,
+                            )
+
+                            if T.all_of(
+                                candidate_f < current_f, candidate_gnorm < current_gnorm
+                            ):
+                                val_beta = candidate_beta
+                                val_c = candidate_c
+                                val_T = candidate_T
+                                current_f = candidate_f
+                                current_gnorm = candidate_gnorm
+                                T.loop_break()
+
+                            if k == (_LINE_SEARCH_MAX_ITERS - 1):
+                                val_beta = _sinkhorn_iteration(
+                                    val_beta, val_R, base_lane_id, active_mask
+                                )
+                                (
+                                    val_c,
+                                    val_T,
+                                    current_f,
+                                    current_gnorm,
+                                ) = _compute_f_gradient(
+                                    val_beta,
+                                    val_R,
+                                    row,
+                                    col,
+                                    base_lane_id,
+                                    active_mask,
+                                )
+
+                        if current_gnorm < tol:
+                            T.loop_break()
 
                 T_out[instance_id, row, col] = val_T
 
