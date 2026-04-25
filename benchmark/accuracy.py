@@ -4,6 +4,7 @@ from mhc.kernels import _mhc_sinkhorn_fwd_kernel
 import mhc_proj
 import mhc_proj.tilelang as mhc_proj_tl
 
+
 # Vanilla PyTorch implementation
 @torch.compile
 def vanilla(x, iters=20, eps=1e-6):
@@ -12,6 +13,7 @@ def vanilla(x, iters=20, eps=1e-6):
         P = P / (P.sum(dim=2, keepdim=True) + eps)
         P = P / (P.sum(dim=1, keepdim=True) + eps)
     return P
+
 
 # Triton-Sinkhorn: https://github.com/LottoLottoLotto/triton-sinkhorn
 # Source included in the benchmark/mhc directory
@@ -29,13 +31,17 @@ def fused(x, mhc_iters=20):
     H = torch.empty((B, mhc_iters * 2 * NN), device=W.device, dtype=torch.float32)
 
     _mhc_sinkhorn_fwd_kernel[(B,)](
-        W, M, H,
-        W.stride(0), H.stride(0),
+        W,
+        M,
+        H,
+        W.stride(0),
+        H.stride(0),
         N_LANES=n,
         ITERS=mhc_iters,
         BLOCK_SIZE=BLOCK_SIZE,
     )
     return M
+
 
 # mHC.cu: https://github.com/AndreSlavescu/mHC.cu
 # Source included in the src directory
@@ -44,15 +50,24 @@ def sk_n4(x, max_iter=20):
     T = mhc_proj.torch.sinkhorn_knopp_n4(expon, max_iter)["T"]
     return T
 
+
 # TileLang Sinkhorn-Knopp n=4
 def tl_sk_n4(x, max_iter=20):
     T = mhc_proj_tl.sinkhorn_knopp_n4_forward(x.contiguous(), max_iter)["T"]
     return T
 
+
 # mHC-proj
 def proj_n4(x, tol=1e-6):
     T = mhc_proj.torch.birkhoff_proj_n4(x, tol)["T"]
     return T
+
+
+# TileLang mHC-proj
+def tl_proj_n4(x, tol=1e-6):
+    T = mhc_proj_tl.birkhoff_proj_n4_forward(x, tol)["T"]
+    return T
+
 
 # Marginal error of output 4x4 matrix
 def marginal_error(T):
@@ -61,13 +76,17 @@ def marginal_error(T):
     err = (row_sum - 1.0).abs().sum(dim=-1) + (col_sum - 1.0).abs().sum(dim=-1)
     return err
 
+
 # Print statistics
 def print_error_stats(err, name):
     err_mean = err.mean().item()
     err_std = err.std().item()
     err_median = err.median().item()
     err_max = err.max().item()
-    print(f"{name:15s}: mean={err_mean:.3e}, std={err_std:.3e}, median={err_median:.3e}, max={err_max:.3e}")
+    print(
+        f"{name:15s}: mean={err_mean:.3e}, std={err_std:.3e}, median={err_median:.3e}, max={err_max:.3e}"
+    )
+
 
 # Accuracy test
 def accuracy_test(x, input_distr):
@@ -76,6 +95,7 @@ def accuracy_test(x, input_distr):
     out_sk_n4 = sk_n4(x)
     out_tl_sk_n4 = tl_sk_n4(x)
     out_proj_n4 = proj_n4(x)
+    out_tl_proj_n4 = tl_proj_n4(x)
 
     print("=" * 80)
     print(f"Input Distribution: {input_distr}")
@@ -85,12 +105,14 @@ def accuracy_test(x, input_distr):
     print_error_stats(marginal_error(out_sk_n4), "mHC.cu")
     print_error_stats(marginal_error(out_tl_sk_n4), "TL-SK-n4")
     print_error_stats(marginal_error(out_proj_n4), "mHC-proj")
+    print_error_stats(marginal_error(out_tl_proj_n4), "TL-mHC-proj")
+
 
 if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     N = 10000
-    
+
     torch.manual_seed(123)
     x = torch.randn(N, 4, 4, device=device)
     accuracy_test(x, "N(0, 1)")
