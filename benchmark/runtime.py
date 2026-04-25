@@ -3,6 +3,7 @@ import torch
 import triton
 from mhc.kernels import _mhc_sinkhorn_fwd_kernel, _mhc_sinkhorn_bwd_kernel
 import mhc_proj
+import mhc_proj.tilelang as mhc_proj_tl
 
 # Vanilla PyTorch implementation
 @torch.compile
@@ -81,6 +82,19 @@ def sk_n4_fwd_bwd(x, G, max_iter=20):
     grad = sk_n4_bwd(G, *saved, max_iter=max_iter)
     return out.detach(), grad
 
+# TileLang Sinkhorn-Knopp n=4
+def tl_sk_n4_fwd(x, max_iter=20):
+    logits = x.contiguous()
+    return mhc_proj_tl.sinkhorn_knopp_n4_forward(logits, max_iter)["T"], logits
+
+def tl_sk_n4_bwd(G, logits, max_iter=20):
+    return mhc_proj_tl.sinkhorn_knopp_n4_backward(G, logits, max_iter)["D"]
+
+def tl_sk_n4_fwd_bwd(x, G, max_iter=20):
+    out, *saved = tl_sk_n4_fwd(x, max_iter)
+    grad = tl_sk_n4_bwd(G, *saved, max_iter=max_iter)
+    return out.detach(), grad
+
 # mHC-proj
 def proj_n4_fwd(x, tol=1e-6):
     T = mhc_proj.torch.birkhoff_proj_n4(x, tol)["T"]
@@ -154,6 +168,7 @@ if __name__ == "__main__":
             t_vanilla = benchmark(vanilla_fwd, x, G, iters=100, backward=False)
             t_fused = benchmark(fused_fwd, x, G, iters=100, backward=False)
             t_sk_n4 = benchmark(sk_n4_fwd, x, G, iters=100, backward=False)
+            t_tl_sk_n4 = benchmark(tl_sk_n4_fwd, x, G, iters=100, backward=False)
             t_proj_n4 = benchmark(proj_n4_fwd, x, G, iters=100, backward=False)
 
             results.append({
@@ -161,6 +176,7 @@ if __name__ == "__main__":
                 "Vanilla": t_vanilla / t_proj_n4,
                 "Fused": t_fused / t_proj_n4,
                 "SK-n4": t_sk_n4 / t_proj_n4,
+                "TL-SK-n4": t_tl_sk_n4 / t_proj_n4,
                 "Proj-n4": t_proj_n4 / t_proj_n4
             })
     dat = pd.DataFrame(results)
@@ -192,6 +208,7 @@ if __name__ == "__main__":
             t_vanilla = benchmark(vanilla_fwd_bwd, x, G, iters=100, backward=True)
             t_fused = benchmark(fused_fwd_bwd, x, G, iters=100, backward=True)
             t_sk_n4 = benchmark(sk_n4_fwd_bwd, x, G, iters=100, backward=True)
+            t_tl_sk_n4 = benchmark(tl_sk_n4_fwd_bwd, x, G, iters=100, backward=True)
             t_proj_n4 = benchmark(proj_n4_fwd_bwd, x, G, iters=100, backward=True)
 
             results.append({
@@ -199,6 +216,7 @@ if __name__ == "__main__":
                 "Vanilla": t_vanilla / t_proj_n4,
                 "Fused": t_fused / t_proj_n4,
                 "SK-n4": t_sk_n4 / t_proj_n4,
+                "TL-SK-n4": t_tl_sk_n4 / t_proj_n4,
                 "Proj-n4": t_proj_n4 / t_proj_n4
             })
     dat = pd.DataFrame(results)

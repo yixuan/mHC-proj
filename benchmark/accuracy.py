@@ -2,6 +2,7 @@ import torch
 import triton
 from mhc.kernels import _mhc_sinkhorn_fwd_kernel
 import mhc_proj
+import mhc_proj.tilelang as mhc_proj_tl
 
 # Vanilla PyTorch implementation
 @torch.compile
@@ -43,6 +44,11 @@ def sk_n4(x, max_iter=20):
     T = mhc_proj.torch.sinkhorn_knopp_n4(expon, max_iter)["T"]
     return T
 
+# TileLang Sinkhorn-Knopp n=4
+def tl_sk_n4(x, max_iter=20):
+    T = mhc_proj_tl.sinkhorn_knopp_n4_forward(x.contiguous(), max_iter)["T"]
+    return T
+
 # mHC-proj
 def proj_n4(x, tol=1e-6):
     T = mhc_proj.torch.birkhoff_proj_n4(x, tol)["T"]
@@ -68,6 +74,7 @@ def accuracy_test(x, input_distr):
     out_vanilla = vanilla(x)
     out_fused = fused(x)
     out_sk_n4 = sk_n4(x)
+    out_tl_sk_n4 = tl_sk_n4(x)
     out_proj_n4 = proj_n4(x)
 
     print("=" * 80)
@@ -76,6 +83,7 @@ def accuracy_test(x, input_distr):
     print_error_stats(marginal_error(out_vanilla), "Vanilla")
     print_error_stats(marginal_error(out_fused), "Triton-Sinkhorn")
     print_error_stats(marginal_error(out_sk_n4), "mHC.cu")
+    print_error_stats(marginal_error(out_tl_sk_n4), "TL-SK-n4")
     print_error_stats(marginal_error(out_proj_n4), "mHC-proj")
 
 if __name__ == "__main__":
