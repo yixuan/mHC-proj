@@ -2,7 +2,11 @@ import torch
 import triton
 from mhc.kernels import _mhc_sinkhorn_fwd_kernel
 import mhc_proj
-import mhc_proj.tilelang as mhc_proj_tl
+from mhc.tilelang import (
+    birkhoff_proj_n4_forward,
+    sinkhorn_knopp1_n4_forward,
+    sinkhorn_knopp2_n4_forward,
+)
 
 
 # Vanilla PyTorch implementation
@@ -53,13 +57,13 @@ def sk_n4(x, max_iter=20):
 
 # TileLang Sinkhorn-Knopp n=4 from deepseek TileKernels
 def tl_sk1_n4(x, max_iter=20):
-    T = mhc_proj_tl.sinkhorn_knopp1_n4_forward(x.contiguous(), max_iter)["T"]
+    T = sinkhorn_knopp1_n4_forward(x.contiguous(), max_iter)["T"]
     return T
 
 
 # TileLang Sinkhorn-Knopp n=4 from tile-lang examples
 def tl_sk2_n4(x, max_iter=20):
-    T = mhc_proj_tl.sinkhorn_knopp2_n4_forward(x.contiguous(), max_iter)["T"]
+    T = sinkhorn_knopp2_n4_forward(x.contiguous(), max_iter)["T"]
     return T
 
 
@@ -71,7 +75,7 @@ def proj_n4(x, tol=1e-6):
 
 # TileLang mHC-proj
 def tl_proj_n4(x, tol=1e-6):
-    T = mhc_proj_tl.birkhoff_proj_n4_forward(x, tol)["T"]
+    T = birkhoff_proj_n4_forward(x, tol)["T"]
     return T
 
 

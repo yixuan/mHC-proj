@@ -14,8 +14,6 @@ from .sinkhorn2 import (
 __all__ = [
     "birkhoff_proj_n4_forward",
     "birkhoff_proj_n4_backward",
-    "sinkhorn_knopp_n4_forward",
-    "sinkhorn_knopp_n4_backward",
     "sinkhorn_knopp1_n4_forward",
     "sinkhorn_knopp1_n4_backward",
     "sinkhorn_knopp2_n4_forward",

@@ -3,7 +3,14 @@ import torch
 import triton
 from mhc.kernels import _mhc_sinkhorn_fwd_kernel, _mhc_sinkhorn_bwd_kernel
 import mhc_proj
-import mhc_proj.tilelang as mhc_proj_tl
+from mhc.tilelang import (
+    birkhoff_proj_n4_forward,
+    birkhoff_proj_n4_backward,
+    sinkhorn_knopp1_n4_forward,
+    sinkhorn_knopp1_n4_backward,
+    sinkhorn_knopp2_n4_forward,
+    sinkhorn_knopp2_n4_backward,
+)
 
 
 # Vanilla PyTorch implementation
@@ -101,11 +108,11 @@ def sk_n4_fwd_bwd(x, G, max_iter=20):
 # TileLang Sinkhorn-Knopp n=4 from deepseek TileKernels
 def tl_sk1_n4_fwd(x, max_iter=20):
     R = x.contiguous()
-    return mhc_proj_tl.sinkhorn_knopp1_n4_forward(R, max_iter)["T"], R
+    return sinkhorn_knopp1_n4_forward(R, max_iter)["T"], R
 
 
 def tl_sk1_n4_bwd(G, R, max_iter=20):
-    return mhc_proj_tl.sinkhorn_knopp1_n4_backward(G, R, max_iter)["D"]
+    return sinkhorn_knopp1_n4_backward(G, R, max_iter)["D"]
 
 
 def tl_sk1_n4_fwd_bwd(x, G, max_iter=20):
@@ -117,12 +124,12 @@ def tl_sk1_n4_fwd_bwd(x, G, max_iter=20):
 # TileLang Sinkhorn-Knopp n=4 from tile-lang examples
 def tl_sk2_n4_fwd(x, max_iter=20):
     R = x.contiguous()
-    T = mhc_proj_tl.sinkhorn_knopp2_n4_forward(R, max_iter)["T"]
+    T = sinkhorn_knopp2_n4_forward(R, max_iter)["T"]
     return T, T
 
 
 def tl_sk2_n4_bwd(G, T):
-    return mhc_proj_tl.sinkhorn_knopp2_n4_backward(G, T)["D"]
+    return sinkhorn_knopp2_n4_backward(G, T)["D"]
 
 
 def tl_sk2_n4_fwd_bwd(x, G, max_iter=20):
@@ -149,12 +156,12 @@ def proj_n4_fwd_bwd(x, G, tol=1e-6):
 
 # TileLang mHC-proj
 def tl_proj_n4_fwd(x, tol=1e-6):
-    T = mhc_proj_tl.birkhoff_proj_n4_forward(x, tol)["T"]
+    T = birkhoff_proj_n4_forward(x, tol)["T"]
     return T, T
 
 
 def tl_proj_n4_bwd(G, T):
-    return mhc_proj_tl.birkhoff_proj_n4_backward(G, T)["D"]
+    return birkhoff_proj_n4_backward(G, T)["D"]
 
 
 def tl_proj_n4_fwd_bwd(x, G, tol=1e-6):
