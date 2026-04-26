@@ -1,7 +1,7 @@
 import os
 import sys
 from glob import glob
-from setuptools import find_packages, setup
+from setuptools import setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
 __version__ = "0.1.0"
@@ -41,7 +41,7 @@ setup(
     author_email="yixuanq@gmail.com",
     url="https://github.com/yixuan/mHC-proj",
     description="Accelerated Birkhoff Projection for Manifold-Constrained Hyper-Connections",
-    packages=find_packages(include=["mhc_proj", "mhc_proj.*"]),
+    packages=["mhc_proj"],
     ext_modules=ext_modules,
     cmdclass={"build_ext": BuildExtension},
     zip_safe=False,
