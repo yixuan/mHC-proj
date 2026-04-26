@@ -98,19 +98,36 @@ def sk_n4_fwd_bwd(x, G, max_iter=20):
     return out.detach(), grad
 
 
-# TileLang Sinkhorn-Knopp n=4
-def tl_sk_n4_fwd(x, max_iter=20):
-    logits = x.contiguous()
-    return mhc_proj_tl.sinkhorn_knopp_n4_forward(logits, max_iter)["T"], logits
+# TileLang Sinkhorn-Knopp n=4 from deepseek TileKernels
+def tl_sk1_n4_fwd(x, max_iter=20):
+    R = x.contiguous()
+    return mhc_proj_tl.sinkhorn_knopp1_n4_forward(R, max_iter)["T"], R
 
 
-def tl_sk_n4_bwd(G, logits, max_iter=20):
-    return mhc_proj_tl.sinkhorn_knopp_n4_backward(G, logits, max_iter)["D"]
+def tl_sk1_n4_bwd(G, R, max_iter=20):
+    return mhc_proj_tl.sinkhorn_knopp1_n4_backward(G, R, max_iter)["D"]
 
 
-def tl_sk_n4_fwd_bwd(x, G, max_iter=20):
-    out, *saved = tl_sk_n4_fwd(x, max_iter)
-    grad = tl_sk_n4_bwd(G, *saved, max_iter=max_iter)
+def tl_sk1_n4_fwd_bwd(x, G, max_iter=20):
+    out, *saved = tl_sk1_n4_fwd(x, max_iter)
+    grad = tl_sk1_n4_bwd(G, *saved, max_iter=max_iter)
+    return out.detach(), grad
+
+
+# TileLang Sinkhorn-Knopp n=4 from tile-lang examples
+def tl_sk2_n4_fwd(x, max_iter=20):
+    R = x.contiguous()
+    T = mhc_proj_tl.sinkhorn_knopp2_n4_forward(R, max_iter)["T"]
+    return T, T
+
+
+def tl_sk2_n4_bwd(G, T):
+    return mhc_proj_tl.sinkhorn_knopp2_n4_backward(G, T)["D"]
+
+
+def tl_sk2_n4_fwd_bwd(x, G, max_iter=20):
+    out, *saved = tl_sk2_n4_fwd(x, max_iter)
+    grad = tl_sk2_n4_bwd(G, *saved)
     return out.detach(), grad
 
 
@@ -208,7 +225,8 @@ if __name__ == "__main__":
             t_vanilla = benchmark(vanilla_fwd, x, G, iters=100, backward=False)
             t_fused = benchmark(fused_fwd, x, G, iters=100, backward=False)
             t_sk_n4 = benchmark(sk_n4_fwd, x, G, iters=100, backward=False)
-            t_tl_sk_n4 = benchmark(tl_sk_n4_fwd, x, G, iters=100, backward=False)
+            t_tl_sk1_n4 = benchmark(tl_sk1_n4_fwd, x, G, iters=100, backward=False)
+            t_tl_sk2_n4 = benchmark(tl_sk2_n4_fwd, x, G, iters=100, backward=False)
             t_proj_n4 = benchmark(proj_n4_fwd, x, G, iters=100, backward=False)
             t_tl_proj_n4 = benchmark(tl_proj_n4_fwd, x, G, iters=100, backward=False)
 
@@ -218,7 +236,8 @@ if __name__ == "__main__":
                 "Vanilla": t_vanilla / t_proj_n4,
                 "Fused": t_fused / t_proj_n4,
                 "SK-n4": t_sk_n4 / t_proj_n4,
-                "TL-SK-n4": t_tl_sk_n4 / t_proj_n4,
+                "TL-SK1-n4": t_tl_sk1_n4 / t_proj_n4,
+                "TL-SK2-n4": t_tl_sk2_n4 / t_proj_n4,
                 "TL-Proj-n4": t_tl_proj_n4 / t_proj_n4,
                 "Proj-n4": t_proj_n4 / t_proj_n4,
             })
@@ -251,7 +270,8 @@ if __name__ == "__main__":
             t_vanilla = benchmark(vanilla_fwd_bwd, x, G, iters=100, backward=True)
             t_fused = benchmark(fused_fwd_bwd, x, G, iters=100, backward=True)
             t_sk_n4 = benchmark(sk_n4_fwd_bwd, x, G, iters=100, backward=True)
-            t_tl_sk_n4 = benchmark(tl_sk_n4_fwd_bwd, x, G, iters=100, backward=True)
+            t_tl_sk1_n4 = benchmark(tl_sk1_n4_fwd_bwd, x, G, iters=100, backward=True)
+            t_tl_sk2_n4 = benchmark(tl_sk2_n4_fwd_bwd, x, G, iters=100, backward=True)
             t_proj_n4 = benchmark(proj_n4_fwd_bwd, x, G, iters=100, backward=True)
             t_tl_proj_n4 = benchmark(tl_proj_n4_fwd_bwd, x, G, iters=100, backward=True)
 
@@ -261,7 +281,8 @@ if __name__ == "__main__":
                 "Vanilla": t_vanilla / t_proj_n4,
                 "Fused": t_fused / t_proj_n4,
                 "SK-n4": t_sk_n4 / t_proj_n4,
-                "TL-SK-n4": t_tl_sk_n4 / t_proj_n4,
+                "TL-SK1-n4": t_tl_sk1_n4 / t_proj_n4,
+                "TL-SK2-n4": t_tl_sk2_n4 / t_proj_n4,
                 "TL-Proj-n4": t_tl_proj_n4 / t_proj_n4,
                 "Proj-n4": t_proj_n4 / t_proj_n4,
             })

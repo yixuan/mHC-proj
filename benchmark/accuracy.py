@@ -51,9 +51,15 @@ def sk_n4(x, max_iter=20):
     return T
 
 
-# TileLang Sinkhorn-Knopp n=4
-def tl_sk_n4(x, max_iter=20):
-    T = mhc_proj_tl.sinkhorn_knopp_n4_forward(x.contiguous(), max_iter)["T"]
+# TileLang Sinkhorn-Knopp n=4 from deepseek TileKernels
+def tl_sk1_n4(x, max_iter=20):
+    T = mhc_proj_tl.sinkhorn_knopp1_n4_forward(x.contiguous(), max_iter)["T"]
+    return T
+
+
+# TileLang Sinkhorn-Knopp n=4 from tile-lang examples
+def tl_sk2_n4(x, max_iter=20):
+    T = mhc_proj_tl.sinkhorn_knopp2_n4_forward(x.contiguous(), max_iter)["T"]
     return T
 
 
@@ -93,7 +99,8 @@ def accuracy_test(x, input_distr):
     out_vanilla = vanilla(x)
     out_fused = fused(x)
     out_sk_n4 = sk_n4(x)
-    out_tl_sk_n4 = tl_sk_n4(x)
+    out_tl_sk1_n4 = tl_sk1_n4(x)
+    out_tl_sk2_n4 = tl_sk2_n4(x)
     out_proj_n4 = proj_n4(x)
     out_tl_proj_n4 = tl_proj_n4(x)
 
@@ -103,7 +110,8 @@ def accuracy_test(x, input_distr):
     print_error_stats(marginal_error(out_vanilla), "Vanilla")
     print_error_stats(marginal_error(out_fused), "Triton-Sinkhorn")
     print_error_stats(marginal_error(out_sk_n4), "mHC.cu")
-    print_error_stats(marginal_error(out_tl_sk_n4), "TL-SK-n4")
+    print_error_stats(marginal_error(out_tl_sk1_n4), "TL-SK1-n4")
+    print_error_stats(marginal_error(out_tl_sk2_n4), "TL-SK2-n4")
     print_error_stats(marginal_error(out_proj_n4), "mHC-proj")
     print_error_stats(marginal_error(out_tl_proj_n4), "TL-mHC-proj")
 
