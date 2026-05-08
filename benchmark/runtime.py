@@ -3,6 +3,15 @@ import torch
 import triton
 from mhc.kernels import _mhc_sinkhorn_fwd_kernel, _mhc_sinkhorn_bwd_kernel
 import mhc_proj
+from mhc.tilelang import (
+    birkhoff_proj_n4_forward,
+    birkhoff_proj_n4_backward,
+    sinkhorn_knopp1_n4_forward,
+    sinkhorn_knopp1_n4_backward,
+    sinkhorn_knopp2_n4_forward,
+    sinkhorn_knopp2_n4_backward,
+)
+
 
 # Vanilla PyTorch implementation
 @torch.compile
@@ -13,11 +22,13 @@ def vanilla_fwd(x, iters=20, eps=1e-6):
         P = P / (P.sum(dim=1, keepdim=True) + eps)
     return P, None
 
+
 @torch.compile
 def vanilla_fwd_bwd(x, G, iters=20, eps=1e-6):
     out, *saved = vanilla_fwd(x, iters, eps)
     torch.autograd.backward(out, grad_tensors=G)
     return out.detach(), x.grad
+
 
 # Triton-Sinkhorn: https://github.com/LottoLottoLotto/triton-sinkhorn
 # Source included in the benchmark/mhc directory
@@ -35,13 +46,17 @@ def fused_fwd(x, mhc_iters=20):
     H = torch.empty((B, mhc_iters * 2 * NN), device=W.device, dtype=torch.float32)
 
     _mhc_sinkhorn_fwd_kernel[(B,)](
-        W, M, H,
-        W.stride(0), H.stride(0),
+        W,
+        M,
+        H,
+        W.stride(0),
+        H.stride(0),
         N_LANES=n,
         ITERS=mhc_iters,
         BLOCK_SIZE=BLOCK_SIZE,
     )
     return M, W, H
+
 
 @torch.compile
 def fused_bwd(G, W, H, mhc_iters=20):
@@ -54,46 +69,105 @@ def fused_bwd(G, W, H, mhc_iters=20):
     BLOCK_SIZE = triton.next_power_of_2(NN)
 
     _mhc_sinkhorn_bwd_kernel[(B,)](
-        grad_output, W, H, grad_W,
-        W.stride(0), H.stride(0),
+        grad_output,
+        W,
+        H,
+        grad_W,
+        W.stride(0),
+        H.stride(0),
         N_LANES=n,
         ITERS=iters,
         BLOCK_SIZE=BLOCK_SIZE,
     )
     return grad_W
 
+
 def fused_fwd_bwd(x, G, mhc_iters=20):
     out, *saved = fused_fwd(x, mhc_iters)
     grad = fused_bwd(G, *saved, mhc_iters=mhc_iters)
     return out.detach(), grad
 
+
 # mHC.cu: https://github.com/AndreSlavescu/mHC.cu
 # Source included in the src directory
 def sk_n4_fwd(x, max_iter=20):
-    expon =  torch.exp(x)
+    expon = torch.exp(x)
     return mhc_proj.torch.sinkhorn_knopp_n4(expon, max_iter)["T"], expon
+
 
 def sk_n4_bwd(G, expM, max_iter=20):
     return mhc_proj.torch.sinkhorn_knopp_n4_backward(G, expM, max_iter)["D"] * expM
+
 
 def sk_n4_fwd_bwd(x, G, max_iter=20):
     out, *saved = sk_n4_fwd(x, max_iter)
     grad = sk_n4_bwd(G, *saved, max_iter=max_iter)
     return out.detach(), grad
 
+
+# TileLang Sinkhorn-Knopp n=4 from deepseek TileKernels
+def tl_sk1_n4_fwd(x, max_iter=20):
+    R = x.contiguous()
+    return sinkhorn_knopp1_n4_forward(R, max_iter)["T"], R
+
+
+def tl_sk1_n4_bwd(G, R, max_iter=20):
+    return sinkhorn_knopp1_n4_backward(G, R, max_iter)["D"]
+
+
+def tl_sk1_n4_fwd_bwd(x, G, max_iter=20):
+    out, *saved = tl_sk1_n4_fwd(x, max_iter)
+    grad = tl_sk1_n4_bwd(G, *saved, max_iter=max_iter)
+    return out.detach(), grad
+
+
+# TileLang Sinkhorn-Knopp n=4 from tile-lang examples
+def tl_sk2_n4_fwd(x, max_iter=20):
+    R = x.contiguous()
+    T = sinkhorn_knopp2_n4_forward(R, max_iter)["T"]
+    return T, T
+
+
+def tl_sk2_n4_bwd(G, T):
+    return sinkhorn_knopp2_n4_backward(G, T)["D"]
+
+
+def tl_sk2_n4_fwd_bwd(x, G, max_iter=20):
+    out, *saved = tl_sk2_n4_fwd(x, max_iter)
+    grad = tl_sk2_n4_bwd(G, *saved)
+    return out.detach(), grad
+
+
 # mHC-proj
 def proj_n4_fwd(x, tol=1e-6):
     T = mhc_proj.torch.birkhoff_proj_n4(x, tol)["T"]
     return T, T
 
+
 def proj_n4_bwd(G, T):
     return mhc_proj.torch.birkhoff_proj_n4_backward(G, T)["D"]
+
 
 def proj_n4_fwd_bwd(x, G, tol=1e-6):
     out, *saved = proj_n4_fwd(x, tol)
     grad = proj_n4_bwd(G, *saved)
     return out.detach(), grad
 
+
+# TileLang mHC-proj
+def tl_proj_n4_fwd(x, tol=1e-6):
+    T = birkhoff_proj_n4_forward(x, tol)["T"]
+    return T, T
+
+
+def tl_proj_n4_bwd(G, T):
+    return birkhoff_proj_n4_backward(G, T)["D"]
+
+
+def tl_proj_n4_fwd_bwd(x, G, tol=1e-6):
+    out, *saved = tl_proj_n4_fwd(x, tol)
+    grad = tl_proj_n4_bwd(G, *saved)
+    return out.detach(), grad
 
 
 def benchmark(fn, x, G, iters=100, backward=True):
@@ -128,12 +202,16 @@ def benchmark(fn, x, G, iters=100, backward=True):
     t_ms = start.elapsed_time(end)
     return t_ms
 
+
 if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     configs = [
-        {"N": 128, "n": 4}, {"N": 512, "n": 4},
-        {"N": 2048, "n": 4}, {"N": 8192, "n": 4},
-        {"N": 32768, "n": 4}, {"N": 131072, "n": 4}
+        {"N": 128, "n": 4},
+        {"N": 512, "n": 4},
+        {"N": 2048, "n": 4},
+        {"N": 8192, "n": 4},
+        {"N": 32768, "n": 4},
+        {"N": 131072, "n": 4},
     ]
     nruns = 10
 
@@ -154,14 +232,21 @@ if __name__ == "__main__":
             t_vanilla = benchmark(vanilla_fwd, x, G, iters=100, backward=False)
             t_fused = benchmark(fused_fwd, x, G, iters=100, backward=False)
             t_sk_n4 = benchmark(sk_n4_fwd, x, G, iters=100, backward=False)
+            t_tl_sk1_n4 = benchmark(tl_sk1_n4_fwd, x, G, iters=100, backward=False)
+            t_tl_sk2_n4 = benchmark(tl_sk2_n4_fwd, x, G, iters=100, backward=False)
             t_proj_n4 = benchmark(proj_n4_fwd, x, G, iters=100, backward=False)
+            t_tl_proj_n4 = benchmark(tl_proj_n4_fwd, x, G, iters=100, backward=False)
 
             results.append({
-                "N": N, "n": n,
+                "N": N,
+                "n": n,
                 "Vanilla": t_vanilla / t_proj_n4,
                 "Fused": t_fused / t_proj_n4,
                 "SK-n4": t_sk_n4 / t_proj_n4,
-                "Proj-n4": t_proj_n4 / t_proj_n4
+                "TL-SK1-n4": t_tl_sk1_n4 / t_proj_n4,
+                "TL-SK2-n4": t_tl_sk2_n4 / t_proj_n4,
+                "TL-Proj-n4": t_tl_proj_n4 / t_proj_n4,
+                "Proj-n4": t_proj_n4 / t_proj_n4,
             })
     dat = pd.DataFrame(results)
     print("=" * 70)
@@ -192,14 +277,21 @@ if __name__ == "__main__":
             t_vanilla = benchmark(vanilla_fwd_bwd, x, G, iters=100, backward=True)
             t_fused = benchmark(fused_fwd_bwd, x, G, iters=100, backward=True)
             t_sk_n4 = benchmark(sk_n4_fwd_bwd, x, G, iters=100, backward=True)
+            t_tl_sk1_n4 = benchmark(tl_sk1_n4_fwd_bwd, x, G, iters=100, backward=True)
+            t_tl_sk2_n4 = benchmark(tl_sk2_n4_fwd_bwd, x, G, iters=100, backward=True)
             t_proj_n4 = benchmark(proj_n4_fwd_bwd, x, G, iters=100, backward=True)
+            t_tl_proj_n4 = benchmark(tl_proj_n4_fwd_bwd, x, G, iters=100, backward=True)
 
             results.append({
-                "N": N, "n": n,
+                "N": N,
+                "n": n,
                 "Vanilla": t_vanilla / t_proj_n4,
                 "Fused": t_fused / t_proj_n4,
                 "SK-n4": t_sk_n4 / t_proj_n4,
-                "Proj-n4": t_proj_n4 / t_proj_n4
+                "TL-SK1-n4": t_tl_sk1_n4 / t_proj_n4,
+                "TL-SK2-n4": t_tl_sk2_n4 / t_proj_n4,
+                "TL-Proj-n4": t_tl_proj_n4 / t_proj_n4,
+                "Proj-n4": t_proj_n4 / t_proj_n4,
             })
     dat = pd.DataFrame(results)
     print("=" * 70)
