@@ -25,8 +25,8 @@ def sinkhorn_knopp_tilekernels_n4_forward(
 ) -> dict[str, torch.Tensor]:
     _check_n4_tensor("R", R)
     src_options = {"device": R.device, "dtype": R.dtype}
-    R_work = _cuda_float_contiguous(R)
-    T_out = torch.empty_like(R_work)
+    comb_res_mix = _cuda_float_contiguous(R)
+    comb_res_mix_out = torch.empty_like(comb_res_mix)
 
     kernel = _mhc_sinkhorn_fwd(
         hidden_size=_N4,
@@ -34,9 +34,9 @@ def sinkhorn_knopp_tilekernels_n4_forward(
         repeat=max_iter,
         eps=eps,
     )
-    kernel(R_work, T_out)
+    kernel(comb_res_mix, comb_res_mix_out)
 
-    return {"T": T_out.to(**src_options)}
+    return {"T": comb_res_mix_out.to(**src_options)}
 
 
 def sinkhorn_knopp_tilekernels_n4_backward(
@@ -52,9 +52,9 @@ def sinkhorn_knopp_tilekernels_n4_backward(
         raise ValueError("G and R must have the same shape")
 
     src_options = {"device": G.device, "dtype": G.dtype}
-    G_work = _cuda_float_contiguous(G)
-    R_work = _cuda_float_contiguous(R)
-    D = torch.empty_like(G_work)
+    grad_output = _cuda_float_contiguous(G)
+    x = _cuda_float_contiguous(R)
+    grad_input = torch.empty_like(grad_output)
 
     kernel = _mhc_sinkhorn_bwd(
         hidden_size=_N4,
@@ -62,6 +62,6 @@ def sinkhorn_knopp_tilekernels_n4_backward(
         repeat=max_iter,
         eps=eps,
     )
-    kernel(G_work, R_work, D)
+    kernel(grad_output, x, grad_input)
 
-    return {"D": D.to(**src_options)}
+    return {"D": grad_input.to(**src_options)}
