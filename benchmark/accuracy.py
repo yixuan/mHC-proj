@@ -4,8 +4,12 @@ from mhc.kernels import _mhc_sinkhorn_fwd_kernel
 import mhc_proj
 from mhc.tilelang import (
     birkhoff_proj_n4_forward,
-    sinkhorn_knopp1_n4_forward,
-    sinkhorn_knopp2_n4_forward,
+)
+from mhc.tilelang.tilekernels import (
+    sinkhorn_knopp_tilekernels_n4_forward,
+)
+from mhc.tilelang.tileexamples import (
+    sinkhorn_knopp_tileexamples_n4_forward,
 )
 
 
@@ -56,14 +60,14 @@ def sk_n4(x, max_iter=20):
 
 
 # TileLang Sinkhorn-Knopp n=4 from deepseek TileKernels
-def tl_sk1_n4(x, max_iter=20):
-    T = sinkhorn_knopp1_n4_forward(x.contiguous(), max_iter)["T"]
+def tl_tilekernels_n4(x, max_iter=20):
+    T = sinkhorn_knopp_tilekernels_n4_forward(x.contiguous(), max_iter)["T"]
     return T
 
 
 # TileLang Sinkhorn-Knopp n=4 from tile-lang examples
-def tl_sk2_n4(x, max_iter=20):
-    T = sinkhorn_knopp2_n4_forward(x.contiguous(), max_iter)["T"]
+def tl_tileexamples_n4(x, max_iter=20):
+    T = sinkhorn_knopp_tileexamples_n4_forward(x.contiguous(), max_iter)["T"]
     return T
 
 
@@ -103,8 +107,8 @@ def accuracy_test(x, input_distr):
     out_vanilla = vanilla(x)
     out_fused = fused(x)
     out_sk_n4 = sk_n4(x)
-    out_tl_sk1_n4 = tl_sk1_n4(x)
-    out_tl_sk2_n4 = tl_sk2_n4(x)
+    out_tl_tilekernels_n4 = tl_tilekernels_n4(x)
+    out_tl_tileexamples_n4 = tl_tileexamples_n4(x)
     out_proj_n4 = proj_n4(x)
     out_tl_proj_n4 = tl_proj_n4(x)
 
@@ -114,8 +118,8 @@ def accuracy_test(x, input_distr):
     print_error_stats(marginal_error(out_vanilla), "Vanilla")
     print_error_stats(marginal_error(out_fused), "Triton-Sinkhorn")
     print_error_stats(marginal_error(out_sk_n4), "mHC.cu")
-    print_error_stats(marginal_error(out_tl_sk1_n4), "TL-SK1-n4")
-    print_error_stats(marginal_error(out_tl_sk2_n4), "TL-SK2-n4")
+    print_error_stats(marginal_error(out_tl_tilekernels_n4), "TL-TileKernels-n4")
+    print_error_stats(marginal_error(out_tl_tileexamples_n4), "TL-TileExamples-n4")
     print_error_stats(marginal_error(out_proj_n4), "mHC-proj")
     print_error_stats(marginal_error(out_tl_proj_n4), "TL-mHC-proj")
 
