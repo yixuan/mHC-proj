@@ -135,14 +135,14 @@ print(D3)
 
 ## Benchmark
 
-We benchmark the following four open-source implementations on an Nvidia RTX 6000 Ada GPU:
+We benchmark the following open-source implementations on an Nvidia RTX 6000 Ada GPU:
 
 1. **Vanilla**: A simple implementation of the Sinkhorn–Knopp algorithm using pure PyTorch code.
-
 2. **Triton-Sinkhorn**: A CUDA-fused implementation of the Sinkhorn–Knopp algorithm backed by OpenAI Trition: https://github.com/LottoLottoLotto/triton-sinkhorn.
-
-3. **mHC.cu**: A CUDA implementation of mHC, with specialized $n=4$ optimizations: https://github.com/AndreSlavescu/mHC.cu.
-
+3. **mHC.cu**: A CUDA implementation of mHC, with specialized optimizations for $n=4$: https://github.com/AndreSlavescu/mHC.cu.
+4. **TileLangExamples**: A [TileLang](https://github.com/tile-ai/tilelang) implementation of the Sinkhorn-Knopp algorithm adapted from the TileLang examples, with a backward pass using implicit conjugate gradient: https://github.com/tile-ai/tilelang/tree/main/examples/deepseek_mhc.
+5. **TileKernels**: A TileLang implementation of the Sinkhorn-Knopp algorithm adapted from the DeepSeek TileKernels implementation: https://github.com/deepseek-ai/TileKernels.
+6. **mHC-proj-TL**: A TileLang implementation of the proposed second-order Birkhoff projection solver: https://github.com/yixuan/mHC-proj/tree/master/benchmark/mhc/tilelang.
 4. **mHC-proj**: This library.
 
 The test code can be found in the [benchmark](benchmark) directory.
