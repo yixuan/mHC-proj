@@ -157,41 +157,14 @@ $$
 
 The mean, median, and maximum of the $N$ error values are summarized below:
 
-| Input Distribution | Method | Mean Error | Median Error | Max Error |
-|--------------------|--------|------------|--------------|-----------|
-| $N(0,1)$ | Vanilla | $8.34\times 10^{-6}$ | $7.79\times 10^{-6}$ | $1.38\times 10^{-3}$ |
-| | Triton-Sinkhorn  | $9.38\times 10^{-7}$ | $3.28\times 10^{-7}$ | $1.38\times 10^{-3}$ |
-| | mHC.cu           | $8.67\times 10^{-7}$ | $2.61\times 10^{-7}$ | $1.38\times 10^{-3}$ |
-| | **mHC-proj**     | $6.54\times 10^{-7}$ | $5.27\times 10^{-7}$ | $2.50\times 10^{-6}$ |
+![](benchmark/table1.png)
 
-| Input Distribution | Method | Mean Error | Median Error | Max Error |
-|--------------------|--------|------------|--------------|-----------|
-| $N(0,10^2)$ | Vanilla | $7.25\times 10^{-2}$ | $6.51\times 10^{-2}$ | $0.83$  |
-| | Triton-Sinkhorn     | $7.25\times 10^{-2}$ | $6.51\times 10^{-2}$ | $0.83$  |
-| | mHC.cu              | $8.79\times 10^{-2}$ | $6.55\times 10^{-2}$ | $4.00$  |
-| | **mHC-proj**        | $1.59\times 10^{-3}$ | $8.98\times 10^{-7}$ | $0.091$ |
+If the magnitudes of the entries are larger, then mHC-proj demonstrates larger advantages:
 
+![](benchmark/table2.png)
 
 ### Run time
 
 We fix the input distribution to be $N(0,10^2)$, and measure the run time of different implementations for various batch sizes $N$. The time is normalized such that in each configuration **mHC-proj** has one unit of run time.
 
-Forward pass only:
-
-| Batch size | Vanilla | Triton-Sinkhorn | mHC.cu | mHC-proj |
-|------------|---------|-----------------|--------|----------|
-| 0.5K       | 55.71   | 10.06           | 3.158  | 1.000    |
-| 2K         | 55.53   | 19.12           | 3.161  | 1.000    |
-| 8K         | 55.98   | 86.68           | 4.142  | 1.000    |
-| 32K        | 24.27   | 198.0           | 2.355  | 1.000    |
-| 128K       | 9.823   | 271.1           | 1.338  | 1.000    |
-
-Forward and backward passes:
-
-| Batch size | Vanilla | Triton-Sinkhorn | mHC.cu | mHC-proj |
-|------------|---------|-----------------|--------|----------|
-| 0.5K       | 136.1   | 9.825           | 3.523  | 1.000    |
-| 2K         | 136.4   | 12.74           | 3.543  | 1.000    |
-| 8K         | 135.1   | 52.87           | 4.085  | 1.000    |
-| 32K        | 95.59   | 180.5           | 6.903  | 1.000    |
-| 128K       | 52.59   | 370.5           | 21.89  | 1.000    |
+![](benchmark/table3.png)
